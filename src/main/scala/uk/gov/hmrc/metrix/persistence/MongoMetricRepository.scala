@@ -19,29 +19,56 @@ package uk.gov.hmrc.metrix.persistence
 import play.api.libs.json.{JsObject, Json}
 import reactivemongo.api.indexes.{Index, IndexType}
 import reactivemongo.api.{DB, ReadPreference}
-import reactivemongo.bson.BSONObjectID
+import reactivemongo.bson.{BSONDocument, BSONObjectID}
 import uk.gov.hmrc.metrix.domain.{MetricRepository, PersistedMetric}
 import uk.gov.hmrc.mongo.ReactiveRepository
-import reactivemongo.play.json.ImplicitBSONHandlers._
 
 import scala.concurrent.{ExecutionContext, Future}
+import reactivemongo.play.json.compat._
 
 class MongoMetricRepository(collectionName: String = "metrics")(implicit mongo: () => DB)
   extends ReactiveRepository[PersistedMetric, BSONObjectID](collectionName, mongo, PersistedMetric.format)
   with MetricRepository {
 
-  override def indexes: Seq[Index] = Seq(
-    Index(key = Seq("name" -> IndexType.Ascending), name = Some("metric_key_idx"), unique = true, background = true)
+  override def indexes: Seq[Index.Default] = Seq(
+    Index(
+      key = Seq("name" -> IndexType.Ascending),
+      name = Some("metric_key_idx"),
+      unique = true,
+      background = true,
+      sparse = false,
+      expireAfterSeconds = None,
+      storageEngine = None,
+      weights = None,
+      defaultLanguage = None,
+      languageOverride = None,
+      textIndexVersion = None,
+      sphereIndexVersion = None,
+      bits = None,
+      min = None,
+      max = None,
+      bucketSize = None,
+      collation = None,
+      wildcardProjection = None,
+      version = None,
+      partialFilter = None,
+      options = BSONDocument.empty
+    )
+
   )
 
   override def findAll()(implicit ec: ExecutionContext): Future[List[PersistedMetric]] =
     findAll(ReadPreference.secondaryPreferred)
 
   def persist(calculatedMetric: PersistedMetric)(implicit ec: ExecutionContext) =
-    collection.findAndUpdate(
-      selector = Json.obj("name" -> calculatedMetric.name),
-      update = Json.toJson(calculatedMetric).as[JsObject],
-      upsert = true,
-      fetchNewObject = true
-    ).map(_.result[PersistedMetric])
+    {
+      implicit val format = PersistedMetric.format
+      import json2bson._
+      collection.findAndUpdate(
+        selector = Json.obj("name" -> calculatedMetric.name),
+        update = Json.toJson(calculatedMetric).as[JsObject],
+        upsert = true,
+        fetchNewObject = true
+      ).map(_.result[PersistedMetric])
+    }
 }
